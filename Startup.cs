@@ -13,6 +13,12 @@ using Microsoft.Extensions.Logging;
 using Fisher.Bookstore.Services;
 using Microsoft.EntityFrameworkCore;
 using Fisher.Bookstore.Data;
+using Fisher.Bookstore;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Logging;
 
 namespace Fisher.Bookstore
 {
@@ -35,6 +41,31 @@ namespace Fisher.Bookstore
             );
             services.AddScoped<IBooksRepository, BooksRepository>();
             services.AddScoped<IAuthorsRepository, AuthorsRepository>();
+        
+            string domain = $"https://{Configuration["Auth0:Domain"]}/";
+            services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            }).AddJwtBearer(options =>
+            {
+                options.Authority = domain;
+                options.Audience = Configuration["Auth0:ApiIdentifier"];
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    NameClaimType = ClaimTypes.NameIdentifier
+                };
+            });
+
+            IdentityModelEventSource.ShowPII = true;
+
+            services.AddAuthorization(options =>
+            {
+                options.AddPolicy("read:messages", policy => policy.Requirements.Add(new HasScopeRequirement("read:messages", domain)));
+            });
+
+            services.AddSingleton<IAuthorizationHandler, HasScopeHandler>();
+            
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -53,6 +84,9 @@ namespace Fisher.Bookstore
                 .AllowAnyHeader()
                 .AllowAnyMethod());
 
+            app.UseAuthorization();
+
+            app.UseAuthentication();
             app.UseAuthorization();
 
             app.UseEndpoints(endpoints =>
